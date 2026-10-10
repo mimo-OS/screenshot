@@ -23,6 +23,7 @@
 #include <QCommandLineParser>
 #include <QTranslator>
 #include <QLocale>
+#include <QFile>
 
 #include "screenshotview.h"
 

@@ -32,6 +32,50 @@
 
 #include <QDBusInterface>
 #include <QDBusPendingCall>
+#include <QFile>
+#include <QDir>
+#include <QUrl>
+#include <QProcess>
+
+#include <QMimeData>
+#include <QBuffer>
+
+static void setClipboardImageData(const QImage &image)
+{
+    QClipboard *clipboard = qGuiApp->clipboard();
+
+    QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    QDir().mkpath(cacheDir);
+    QString tmpPath = "/tmp/cutefish-latest-screenshot.png";
+    QString cachePath = QString("%1/latest-screenshot.png").arg(cacheDir);
+
+    image.save(tmpPath, "PNG");
+    image.save(cachePath, "PNG");
+
+    if (clipboard) {
+        QMimeData *mimeData = new QMimeData();
+        mimeData->setImageData(image);
+
+        QByteArray byteArray;
+        QBuffer buffer(&byteArray);
+        buffer.open(QIODevice::WriteOnly);
+        image.save(&buffer, "PNG");
+        mimeData->setData("image/png", byteArray);
+
+        QList<QUrl> urls;
+        urls.append(QUrl::fromLocalFile(tmpPath));
+        urls.append(QUrl::fromLocalFile(cachePath));
+        mimeData->setUrls(urls);
+        mimeData->setText(tmpPath);
+
+        clipboard->setMimeData(mimeData, QClipboard::Clipboard);
+        clipboard->setMimeData(mimeData, QClipboard::Selection);
+    }
+
+    // Persist clipboard via xclip & wl-copy shell command execution
+    QString cmd = QString("xclip -selection clipboard -t image/png -i '%1' 2>/dev/null || wl-copy --type image/png < '%1' 2>/dev/null").arg(tmpPath);
+    QProcess::startDetached("sh", QStringList() << "-c" << cmd);
+}
 
 ScreenshotView::ScreenshotView(QQuickView *parent)
     : QQuickView(parent)
@@ -47,9 +91,19 @@ ScreenshotView::ScreenshotView(QQuickView *parent)
 
 void ScreenshotView::start()
 {
-    // 保存图片
-    QPixmap p = qGuiApp->primaryScreen()->grabWindow(0);
-    p.save("/tmp/cutefish-screenshot.png");
+    QFile::remove(QStringLiteral("/tmp/cutefish-screenshot.png"));
+
+    // 1. Try grim (standard Wayland compositor screenshot tool)
+    if (QProcess::execute(QStringLiteral("grim"), QStringList() << QStringLiteral("/tmp/cutefish-screenshot.png")) != 0 || !QFile::exists(QStringLiteral("/tmp/cutefish-screenshot.png"))) {
+        // 2. Try spectacle
+        QProcess pr;
+        pr.start(QStringLiteral("spectacle"), QStringList() << QStringLiteral("-b") << QStringLiteral("-n") << QStringLiteral("-o") << QStringLiteral("/tmp/cutefish-screenshot.png"));
+        if (!pr.waitForFinished(1500) || !QFile::exists(QStringLiteral("/tmp/cutefish-screenshot.png"))) {
+            // 3. Fallback to QScreen::grabWindow
+            QPixmap p = qGuiApp->primaryScreen()->grabWindow(0);
+            p.save(QStringLiteral("/tmp/cutefish-screenshot.png"));
+        }
+    }
 
     setVisible(true);
     setKeyboardGrabEnabled(true);
@@ -81,8 +135,24 @@ void ScreenshotView::saveFile(QRect rect)
                               .arg(QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss"));
 
     QImage image("/tmp/cutefish-screenshot.png");
-    QImage cropped = image.copy(rect);
+    if (image.isNull()) {
+        QPixmap p = qGuiApp->primaryScreen()->grabWindow(0);
+        image = p.toImage();
+    }
+
+    qreal dpr = screen() ? screen()->devicePixelRatio() : 1.0;
+    QRect cropRect(rect.x() * dpr, rect.y() * dpr, rect.width() * dpr, rect.height() * dpr);
+    if (cropRect.isEmpty() || cropRect.width() <= 0 || cropRect.height() <= 0) {
+        cropRect = image.rect();
+    } else {
+        cropRect = cropRect.intersected(image.rect());
+    }
+
+    QImage cropped = image.copy(cropRect);
     bool saved = cropped.save(fileName);
+
+    // Always keep last taken screenshot in clipboard
+    setClipboardImageData(cropped);
 
     if (saved) {
         QDBusInterface iface("org.freedesktop.Notifications",
@@ -95,7 +165,7 @@ void ScreenshotView::saveFile(QRect rect)
             args << ((unsigned int) 0);
             args << "cutefish-screenshot";
             args << "";
-            args << tr("The picture has been saved to %1").arg(fileName);
+            args << tr("The picture has been saved to %1 and copied to clipboard").arg(fileName);
             args << QStringList();
             args << QVariantMap();
             args << (int) 10;
@@ -104,7 +174,7 @@ void ScreenshotView::saveFile(QRect rect)
     }
 
     removeTmpFile();
-    this->quit();
+    QTimer::singleShot(600, qGuiApp, &QGuiApplication::quit);
 }
 
 void ScreenshotView::copyToClipboard(QRect rect)
@@ -112,9 +182,21 @@ void ScreenshotView::copyToClipboard(QRect rect)
     setVisible(false);
 
     QImage image("/tmp/cutefish-screenshot.png");
-    QImage cropped = image.copy(rect);
-    QClipboard *clipboard = qGuiApp->clipboard();
-    clipboard->setImage(cropped);
+    if (image.isNull()) {
+        QPixmap p = qGuiApp->primaryScreen()->grabWindow(0);
+        image = p.toImage();
+    }
+
+    qreal dpr = screen() ? screen()->devicePixelRatio() : 1.0;
+    QRect cropRect(rect.x() * dpr, rect.y() * dpr, rect.width() * dpr, rect.height() * dpr);
+    if (cropRect.isEmpty() || cropRect.width() <= 0 || cropRect.height() <= 0) {
+        cropRect = image.rect();
+    } else {
+        cropRect = cropRect.intersected(image.rect());
+    }
+
+    QImage cropped = image.copy(cropRect);
+    setClipboardImageData(cropped);
 
     QDBusInterface iface("org.freedesktop.Notifications",
                          "/org/freedesktop/Notifications",
@@ -135,7 +217,7 @@ void ScreenshotView::copyToClipboard(QRect rect)
 
     removeTmpFile();
 
-    QTimer::singleShot(100, qGuiApp, &QGuiApplication::quit);
+    QTimer::singleShot(200, qGuiApp, &QGuiApplication::quit);
 }
 
 void ScreenshotView::removeTmpFile()
