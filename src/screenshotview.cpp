@@ -46,35 +46,45 @@ static void setClipboardImageData(const QImage &image)
 
     QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
     QDir().mkpath(cacheDir);
-    QString tmpPath = "/tmp/cutefish-latest-screenshot.png";
-    QString cachePath = QString("%1/latest-screenshot.png").arg(cacheDir);
+    const QString tmpPath = QStringLiteral("/tmp/cutefish-latest-screenshot.png");
+    const QString cachePath = QStringLiteral("%1/latest-screenshot.png").arg(cacheDir);
 
-    image.save(tmpPath, "PNG");
-    image.save(cachePath, "PNG");
+    QByteArray pngData;
+    QBuffer buffer(&pngData);
+    buffer.open(QIODevice::WriteOnly);
+    image.save(&buffer, "PNG");
+
+    QFile tmpFile(tmpPath);
+    if (tmpFile.open(QIODevice::WriteOnly))
+        tmpFile.write(pngData);
+
+    QFile cacheFile(cachePath);
+    if (cacheFile.open(QIODevice::WriteOnly))
+        cacheFile.write(pngData);
 
     if (clipboard) {
+        const QList<QUrl> urls = {QUrl::fromLocalFile(tmpPath), QUrl::fromLocalFile(cachePath)};
+
         QMimeData *mimeData = new QMimeData();
         mimeData->setImageData(image);
-
-        QByteArray byteArray;
-        QBuffer buffer(&byteArray);
-        buffer.open(QIODevice::WriteOnly);
-        image.save(&buffer, "PNG");
-        mimeData->setData("image/png", byteArray);
-
-        QList<QUrl> urls;
-        urls.append(QUrl::fromLocalFile(tmpPath));
-        urls.append(QUrl::fromLocalFile(cachePath));
+        mimeData->setData(QStringLiteral("image/png"), pngData);
         mimeData->setUrls(urls);
         mimeData->setText(tmpPath);
-
         clipboard->setMimeData(mimeData, QClipboard::Clipboard);
-        clipboard->setMimeData(mimeData, QClipboard::Selection);
+
+        if (clipboard->supportsSelection()) {
+            QMimeData *selMime = new QMimeData();
+            selMime->setImageData(image);
+            selMime->setData(QStringLiteral("image/png"), pngData);
+            selMime->setUrls(urls);
+            selMime->setText(tmpPath);
+            clipboard->setMimeData(selMime, QClipboard::Selection);
+        }
     }
 
     // Persist clipboard via xclip & wl-copy shell command execution
-    QString cmd = QString("xclip -selection clipboard -t image/png -i '%1' 2>/dev/null || wl-copy --type image/png < '%1' 2>/dev/null").arg(tmpPath);
-    QProcess::startDetached("sh", QStringList() << "-c" << cmd);
+    QString cmd = QStringLiteral("xclip -selection clipboard -t image/png -i '%1' 2>/dev/null || wl-copy --type image/png < '%1' 2>/dev/null").arg(tmpPath);
+    QProcess::startDetached(QStringLiteral("sh"), QStringList() << QStringLiteral("-c") << cmd);
 }
 
 ScreenshotView::ScreenshotView(QQuickView *parent)
