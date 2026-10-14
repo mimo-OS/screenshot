@@ -24,6 +24,9 @@
 #include <QTranslator>
 #include <QLocale>
 #include <QFile>
+#include <QDir>
+#include <QEventLoop>
+#include <QTimer>
 
 #include "screenshotview.h"
 
@@ -32,10 +35,15 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
 
     QCommandLineOption delayOption(QStringList() << "d" << "delay", "Delay Screenshot", "NUM");
+    QCommandLineOption areaOption(QStringList() << "a" << "area", "Capture Area");
+    QCommandLineOption fullOption(QStringList() << "f" << "fullscreen", "Capture Fullscreen");
+
     QCommandLineParser parser;
     parser.setApplicationDescription("Cutefish Screenshot");
     parser.addHelpOption();
     parser.addOption(delayOption);
+    parser.addOption(areaOption);
+    parser.addOption(fullOption);
     parser.process(app);
 
     if (!QDBusConnection::sessionBus().registerService("com.cutefish.Screenshot")) {
@@ -43,18 +51,34 @@ int main(int argc, char *argv[])
         return 0;
     }
 
-    QString qmFilePath = QString("%1/%2.qm").arg("/usr/share/cutefish-screenshot/translations/").arg(QLocale::system().name());
-    if (QFile::exists(qmFilePath)) {
-        QTranslator *translator = new QTranslator(QApplication::instance());
-        if (translator->load(qmFilePath)) {
-            QApplication::installTranslator(translator);
-        } else {
-            translator->deleteLater();
+    const QStringList searchPaths = {
+        QStringLiteral("/usr/share/cutefish-screenshot/translations/"),
+        QStringLiteral("/usr/local/share/cutefish-screenshot/translations/"),
+        QDir::homePath() + QStringLiteral("/.local/share/cutefish-screenshot/translations/")
+    };
+
+    for (const QString &path : searchPaths) {
+        QString qmFilePath = QString("%1%2.qm").arg(path, QLocale::system().name());
+        if (QFile::exists(qmFilePath)) {
+            QTranslator *translator = new QTranslator(QApplication::instance());
+            if (translator->load(qmFilePath)) {
+                QApplication::installTranslator(translator);
+                break;
+            } else {
+                translator->deleteLater();
+            }
         }
     }
 
     ScreenshotView view;
-    if (parser.isSet(delayOption)) {
+    if (parser.isSet(fullOption)) {
+        if (parser.isSet(delayOption)) {
+            QEventLoop waitLoop;
+            QTimer::singleShot(parser.value(delayOption).toInt(), &waitLoop, &QEventLoop::quit);
+            waitLoop.exec();
+        }
+        view.captureFullscreenDirect();
+    } else if (parser.isSet(delayOption)) {
         view.delay(parser.value(delayOption).toInt());
     } else {
         view.start();

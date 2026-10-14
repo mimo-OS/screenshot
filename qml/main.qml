@@ -33,10 +33,20 @@ Item {
 
     Keys.enabled: true
     Keys.onEscapePressed: view.quit()
+    Keys.onReturnPressed: {
+        if (selectLayer.visible && selectLayer.width > 0 && selectLayer.height > 0) {
+            control.copyToClipboard()
+        }
+    }
+    Keys.onEnterPressed: {
+        if (selectLayer.visible && selectLayer.width > 0 && selectLayer.height > 0) {
+            control.copyToClipboard()
+        }
+    }
 
     Keys.onLeftPressed: {
         if (selectLayer.visible) {
-            var newX =  selectLayer.x -= 10
+            var newX = selectLayer.x - 10
             if (newX < control.x)
                 newX = control.x
 
@@ -46,7 +56,7 @@ Item {
 
     Keys.onRightPressed: {
         if (selectLayer.visible) {
-            var newX =  selectLayer.x += 10
+            var newX = selectLayer.x + 10
             if (newX > control.width - selectLayer.width)
                 newX = control.width - selectLayer.width
 
@@ -56,7 +66,7 @@ Item {
 
     Keys.onUpPressed: {
         if (selectLayer.visible) {
-            var newY = selectLayer.y -= 10
+            var newY = selectLayer.y - 10
             if (newY < control.y)
                 newY = control.y
 
@@ -66,7 +76,7 @@ Item {
 
     Keys.onDownPressed: {
         if (selectLayer.visible) {
-            var newY = selectLayer.y += 10
+            var newY = selectLayer.y + 10
             if (newY > control.height - selectLayer.height)
                 newY = control.height - selectLayer.height
 
@@ -75,25 +85,23 @@ Item {
     }
 
     function refreshImage() {
-        image.source = ""
-        image.source = "file:///tmp/cutefish-screenshot.png"
-
-        selectImage.source = ""
-        selectImage.source = "file:///tmp/cutefish-screenshot.png"
+        var src = "image://screenshot/fullscreen?" + Date.now()
+        image.source = src
+        selectImage.source = src
     }
 
     function save() {
-        view.saveFile(Qt.rect(selectLayer.x * Screen.devicePixelRatio,
-                              selectLayer.y * Screen.devicePixelRatio,
-                              selectLayer.width * Screen.devicePixelRatio,
-                              selectLayer.height * Screen.devicePixelRatio))
+        view.saveFile(Qt.rect(selectLayer.x,
+                              selectLayer.y,
+                              selectLayer.width,
+                              selectLayer.height))
     }
 
     function copyToClipboard() {
-        view.copyToClipboard(Qt.rect(selectLayer.x * Screen.devicePixelRatio,
-                                     selectLayer.y * Screen.devicePixelRatio,
-                                     selectLayer.width * Screen.devicePixelRatio,
-                                     selectLayer.height * Screen.devicePixelRatio))
+        view.copyToClipboard(Qt.rect(selectLayer.x,
+                                     selectLayer.y,
+                                     selectLayer.width,
+                                     selectLayer.height))
     }
 
     Connections {
@@ -107,7 +115,9 @@ Item {
     Image {
         id: image
         anchors.fill: parent
-        asynchronous: true
+        asynchronous: false
+        cache: false
+        source: "image://screenshot/fullscreen"
 
         Rectangle {
             id: dimRect
@@ -145,7 +155,9 @@ Item {
             id: selectImage
             width: control.width
             height: control.height
-            asynchronous: true
+            asynchronous: false
+            cache: false
+            source: "image://screenshot/fullscreen"
             x: -selectLayer.x
             y: -selectLayer.y
         }
@@ -173,8 +185,13 @@ Item {
             id: selectLayerMouseArea
             anchors.fill: parent
             cursorShape: Qt.SizeAllCursor
-            acceptedButtons: Qt.LeftButton
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
             onDoubleClicked: control.save()
+            onClicked: {
+                if (mouse.button === Qt.RightButton) {
+                    view.quit()
+                }
+            }
         }
     }
 
@@ -222,7 +239,6 @@ Item {
         visible: selectLayer.visible && selectLayer.width > 1 && selectLayer.height > 1
         z: 999
 
-        // 放在右侧
         x: {
             var newX = selectLayer.x + selectLayer.width - tools.width
 
@@ -236,11 +252,6 @@ Item {
         y: {
             var newY = 0
 
-//            if (selectLayer.y <= control.y
-//                    && selectLayer.height + tools.height >= control.height)
-//                newY = control.height - tools.height
-
-            // 选中区域与工具栏高度大于总高度
             if (selectLayer.y + selectLayer.height + tools.height + FishUI.Units.smallSpacing >= control.height) {
                 newY = selectLayer.y - tools.height - FishUI.Units.smallSpacing
             } else {
@@ -297,8 +308,18 @@ Item {
         id: mouseArea
         anchors.fill: parent
         cursorShape: Qt.CrossCursor
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+
+        onClicked: {
+            if (mouse.button === Qt.RightButton) {
+                view.quit()
+            }
+        }
 
         onPressed: {
+            if (mouse.button !== Qt.LeftButton)
+                return
+
             selectLayer.visible = true
             selectLayer.x = mouseX
             selectLayer.y = mouseY

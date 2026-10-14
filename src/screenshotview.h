@@ -21,6 +21,9 @@
 #define SCREENSHOTVIEW_H
 
 #include <QQuickView>
+#include <QImage>
+
+class ScreenshotImageProvider;
 
 class ScreenshotView : public QQuickView
 {
@@ -28,9 +31,11 @@ class ScreenshotView : public QQuickView
 
 public:
     explicit ScreenshotView(QQuickView *parent = nullptr);
+    ~ScreenshotView() override;
 
     void start();
     void delay(int value);
+    void captureFullscreenDirect();
 
     Q_INVOKABLE void quit();
     Q_INVOKABLE void saveFile(QRect rect);
@@ -40,6 +45,14 @@ public:
 
 signals:
     void refresh();
+
+private:
+    QImage captureScreen();
+    QImage captureKWin();
+    QImage captureExternal();
+
+    QImage m_capturedImage;
+    ScreenshotImageProvider *m_imageProvider = nullptr;
 };
 
 #endif // SCREENSHOTVIEW_H
