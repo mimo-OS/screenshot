@@ -56,7 +56,7 @@ int main(int argc, char *argv[])
     QCommandLineOption fullOption(QStringList() << "f" << "fullscreen", "Capture Fullscreen");
 
     QCommandLineParser parser;
-    parser.setApplicationDescription("Cutefish Screenshot");
+    parser.setApplicationDescription("mimo OS Screenshot");
     parser.addHelpOption();
     parser.addOption(delayOption);
     parser.addOption(areaOption);

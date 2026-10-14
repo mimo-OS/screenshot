@@ -1,6 +1,8 @@
 [Desktop Entry]
 Name=Screenshot
 Name[zh_CN]=截图
+GenericName=mimo OS Screenshot
+Comment=Capture screen and window previews on mimo OS
 Exec=/usr/bin/cutefish-screenshot
 Icon=cutefish-screenshot
 Terminal=false
